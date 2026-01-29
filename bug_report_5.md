@@ -1,218 +1,199 @@
-# [BUG] [v0.0.5] Installation to ~/.local/bin Fails Without PATH Configuration Instructions
+# [BUG] [v0.0.5] README Contains Placeholder Text and Incorrect Version Command Instructions
 
 ## Description
-The README.md documents an alternative installation path (`~/.local/bin`) for users without sudo access, but provides no instructions for adding this directory to the user's PATH. On most Linux distributions and macOS, `~/.local/bin` is NOT in the default PATH, causing the `cortex` command to be unavailable after installation.
+The README.md documentation contains unresolved placeholder text and incorrect command examples that confuse users trying to follow the bounty submission process. Specifically:
 
-Users who install without sudo will complete the installation process successfully, but then receive "command not found" when attempting to run `cortex`. The documentation assumes PATH configuration that doesn't exist on most systems, leaving users unable to use the tool they just installed.
+1. **Line 213**: Contains placeholder `[app cli --version]` instead of the actual command `bounty --version`
+2. **Line 209**: Shows version format `[v0.1.5]` in example titles, but the actual CLI version and expected format may differ
+3. **Version inconsistency**: Examples use `v0.1.5` and `v0.2.0` but the CLI version may be `v0.0.5`
+
+This causes significant user confusion because:
+- Users cannot find their version using the documented command
+- Issue titles may use wrong version format
+- Submissions may be rejected for incorrect formatting
 
 ## Steps to Reproduce
-1. Install Cortex without sudo (to `~/.local/bin`):
+1. Clone the repository and build the CLI:
    ```bash
-   # Simulate non-sudo installation or explicit user-local install
-   mkdir -p ~/.local/bin
-   # (Installation script would place binary here)
-   cp cortex ~/.local/bin/
+   git clone https://github.com/PlatformNetwork/bounty-challenge.git
+   cd bounty-challenge
+   cargo build --release
+   export PATH="$PWD/target/release:$PATH"
    ```
 
-2. Open a new terminal session
-
-3. Attempt to run Cortex:
+2. Follow README instructions to find version (line 213):
    ```bash
-   cortex
+   [app cli --version]  # This is literally what the README says
    ```
 
-4. Observe the error: `command not found: cortex`
+3. Observe the error - this is not a valid command
 
-5. Check if `~/.local/bin` is in PATH:
+4. Try to guess the correct command:
    ```bash
-   echo $PATH | grep -q "$HOME/.local/bin" && echo "In PATH" || echo "NOT in PATH"
-   # Output: NOT in PATH (on most systems)
+   bounty --version
    ```
+
+5. Compare the actual version with the examples in README (v0.1.5, v0.2.0)
 
 ## Expected Behavior
-After installation, running `cortex` should work in any new terminal:
-```bash
-$ cortex
-Welcome to Cortex CLI v0.0.5
-Type 'help' for available commands.
->
+The README should contain actual, working commands:
+
+```markdown
+To find your version, run: `bounty --version`
 ```
 
-Or, the installation process/documentation should:
-1. Automatically add `~/.local/bin` to PATH in shell profile
-2. Provide clear instructions for manual PATH configuration
-3. Show a post-install message with required PATH setup
+And examples should use realistic/current version numbers:
+
+```markdown
+Examples:
+- `[BUG] [v0.0.5] CLI crashes on startup`
+- `[FEATURE] [v0.0.5] Add export to JSON`
+```
 
 ## Actual Behavior
-```bash
-$ cortex
-bash: cortex: command not found
-
-$ which cortex
-cortex not found
-
-$ ls ~/.local/bin/cortex
-/home/user/.local/bin/cortex  # Binary exists but isn't in PATH
-
-$ echo $PATH
-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# Note: ~/.local/bin is NOT included
-```
-
-The README uninstall section acknowledges this path exists:
+README.md line 213 contains:
 ```markdown
-# Or if installed to ~/.local/bin
-rm ~/.local/bin/Cortex
+To find your version, run: `[app cli --version]`
 ```
 
-But never explains how to configure PATH for this location.
+This is clearly a placeholder that was never replaced with the actual command.
+
+README.md lines 208-211 show:
+```markdown
+Examples:
+- `[BUG] [v0.1.5] CLI crashes on startup`
+- `[FEATURE] [v0.2.0] Add export to JSON`
+- `[PERF] [v0.1.5] Slow response time on leaderboard`
+```
+
+These version numbers (`v0.1.5`, `v0.2.0`) may not match the actual CLI version.
 
 ## System Information
-- **OS**: Ubuntu 22.04 LTS, Debian 12, Fedora 39, macOS 14.x (systems where ~/.local/bin isn't in default PATH)
-- **Architecture**: x86_64, ARM64
-- **Shell**: bash 5.x (default ~/.bashrc doesn't include ~/.local/bin), zsh 5.9
-- **Cortex Version**: v0.0.5
-- **Installation Method**: Non-sudo installation to ~/.local/bin
+- **OS**: Ubuntu 22.04 LTS
+- **Architecture**: x86_64
+- **Rust Version**: rustc 1.75.0
+- **Bounty CLI Version**: v0.0.5
+- **Shell**: bash 5.1
 
 ## Impact
 - **Severity**: Medium
-- **Affected Users**: All users installing without sudo privileges, including:
-  - Users on shared servers without admin access
-  - Users following security best practices (avoiding sudo for user tools)
-  - Users in corporate environments with restricted permissions
-  - macOS users who prefer user-local installations
+- **Affected Users**: All new users following the README to submit issues
 - **Consequences**:
-  - Installation appears successful but tool is unusable
-  - Users unfamiliar with PATH configuration are stuck
-  - Creates poor first-time experience
-  - Increases support requests for "cortex not found" issues
-  - Users may incorrectly assume installation failed
+  - **Command confusion**: Users cannot find their version
+  - **Rejected submissions**: Issues with wrong version format may be auto-closed
+  - **Lost bounties**: Invalid submissions don't count toward rewards
+  - **Unprofessional appearance**: Placeholder text suggests incomplete documentation
+  - **Support burden**: Users will ask "what's the version command?"
 
 ## Suggested Fix
 
-### 1. Update README with PATH Instructions
+### Fix 1: Replace Placeholder with Actual Command (Line 213)
+```diff
+-To find your version, run: `[app cli --version]`
++To find your version, run: `bounty --version`
+```
 
-Add a section after installation instructions:
+### Fix 2: Update Example Versions to Match Current Release
+```diff
+Examples:
+-- `[BUG] [v0.1.5] CLI crashes on startup`
+-- `[FEATURE] [v0.2.0] Add export to JSON`
+-- `[PERF] [v0.1.5] Slow response time on leaderboard`
++- `[BUG] [v0.0.5] CLI crashes on startup`
++- `[FEATURE] [v0.0.5] Add export to JSON`
++- `[PERF] [v0.0.5] Slow response time on leaderboard`
+```
+
+### Fix 3: Add Version Discovery Section
+Add a dedicated section explaining how to find versions:
 
 ```markdown
-### PATH Configuration
+### Finding Your Version
 
-If you installed to `~/.local/bin` (non-sudo installation), add it to your PATH:
+The version should be included in all issue titles. Find your version:
 
-**Bash** (~/.bashrc):
+**For bounty CLI:**
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+bounty --version
+# Output: bounty-challenge 0.0.5
 ```
 
-**Zsh** (~/.zshrc):
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-**Fish** (~/.config/fish/config.fish):
-```fish
-fish_add_path ~/.local/bin
-```
-
-Verify installation:
+**For Cortex CLI (if analyzing Cortex bugs):**
 ```bash
 cortex --version
 ```
+
+**Format:** Use the format `[v0.0.5]` (lowercase 'v', three-part version number)
 ```
 
-### 2. Update Installation Script to Handle PATH
+### Fix 4: Add Version Validation CI
+Consider adding a GitHub Action to validate issue titles:
 
-The install.sh should automatically configure PATH or provide guidance:
+```yaml
+# .github/workflows/validate-issue.yml
+name: Validate Issue Title
+on:
+  issues:
+    types: [opened, edited]
 
-```bash
-#!/bin/bash
-# ... installation logic ...
-
-INSTALL_DIR="$HOME/.local/bin"
-
-# Install binary
-mkdir -p "$INSTALL_DIR"
-cp cortex "$INSTALL_DIR/"
-
-# Check if INSTALL_DIR is in PATH
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-    echo ""
-    echo "NOTE: $INSTALL_DIR is not in your PATH."
-    echo ""
-    echo "Add it to your shell profile:"
-    echo ""
-
-    if [[ -n "$BASH_VERSION" ]]; then
-        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
-        echo "  source ~/.bashrc"
-    elif [[ -n "$ZSH_VERSION" ]]; then
-        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
-        echo "  source ~/.zshrc"
-    else
-        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    fi
-    echo ""
-fi
-
-echo "Installation complete!"
-```
-
-### 3. Add Automatic PATH Configuration (Optional)
-
-For a better user experience, offer to auto-configure:
-
-```bash
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-    read -p "Add $INSTALL_DIR to PATH automatically? [Y/n] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-        SHELL_PROFILE=""
-        if [[ -f "$HOME/.bashrc" ]]; then
-            SHELL_PROFILE="$HOME/.bashrc"
-        elif [[ -f "$HOME/.zshrc" ]]; then
-            SHELL_PROFILE="$HOME/.zshrc"
-        elif [[ -f "$HOME/.profile" ]]; then
-            SHELL_PROFILE="$HOME/.profile"
-        fi
-
-        if [[ -n "$SHELL_PROFILE" ]]; then
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_PROFILE"
-            echo "Added to $SHELL_PROFILE. Restart your terminal or run: source $SHELL_PROFILE"
-        fi
-    fi
-fi
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check title format
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const title = context.payload.issue.title;
+            const pattern = /^\[(BUG|FEATURE|PERF|DOCS)\] \[v\d+\.\d+\.\d+\]/;
+            if (!pattern.test(title)) {
+              core.setFailed('Issue title must match format: [TYPE] [vX.X.X] Description');
+            }
 ```
 
 ## Additional Context
 
-### Default PATH Behavior by System
+### Full Audit of README Documentation Issues
 
-| System | ~/.local/bin in PATH by Default |
-|--------|--------------------------------|
-| Ubuntu 22.04+ | Sometimes (if directory exists at login) |
-| Debian 12 | No |
-| Fedora 39 | No |
-| Arch Linux | No |
-| macOS | No |
-| CentOS/RHEL | No |
-
-### Related XDG Base Directory Standard
-
-The `~/.local/bin` directory follows the XDG Base Directory Specification, but adoption of this path in default PATH varies widely. The installation documentation should not assume its presence.
+| Line | Issue | Current | Should Be |
+|------|-------|---------|-----------|
+| 213 | Placeholder text | `[app cli --version]` | `bounty --version` |
+| 209 | Version mismatch | `v0.1.5` | Current version |
+| 210 | Version mismatch | `v0.2.0` | Current version |
+| 211 | Version mismatch | `v0.1.5` | Current version |
 
 ### Why This Matters
 
-Modern CLI tools like Rust's `cargo`, Haskell's `stack`, and Python's `pipx` all handle PATH configuration gracefully:
-- Cargo: Adds `~/.cargo/bin` to PATH and shows post-install message
-- pipx: Runs `pipx ensurepath` to configure PATH automatically
-- Homebrew: Shows post-install PATH instructions
+1. **Issue Validation**: The README states issues without version will be auto-closed:
+   > **IMPORTANT**: You MUST include the version in your issue title. Issues without a version will be automatically closed.
 
-Cortex should follow these established patterns.
+2. **User Journey Breakdown**:
+   ```
+   User reads README
+       ↓
+   Sees "[app cli --version]"
+       ↓
+   Types this literally → Error
+       ↓
+   Guesses "bounty --version" → Maybe works
+       ↓
+   Uses example version "v0.1.5" → Maybe wrong
+       ↓
+   Issue rejected or marked invalid
+       ↓
+   No bounty reward
+   ```
+
+3. **Documentation Quality**: Placeholder text suggests the documentation was templated and not fully customized for this project.
+
+### Other Potential Documentation Issues to Review
+
+- [ ] Are all command examples tested and working?
+- [ ] Do environment variable names match the code?
+- [ ] Are API endpoints documented correctly?
+- [ ] Do the mermaid diagrams render correctly?
 
 ## References
-- README.md Uninstall Section (acknowledges ~/.local/bin): https://github.com/CortexLM/cortex#uninstall
-- XDG Base Directory Specification: https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
-- Cargo PATH handling: https://doc.rust-lang.org/cargo/getting-started/installation.html
-- pipx ensurepath: https://pypa.github.io/pipx/
+- Affected file: `README.md:213`
+- Issue title format documentation: `README.md:206-211`
+- GitHub Actions for issue validation: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#issues

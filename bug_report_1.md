@@ -1,83 +1,149 @@
-# [BUG] [v0.0.5] Critical Version Inconsistency Between README and CHANGELOG
+# [BUG] [v0.0.5] CLI Panics with Index Out of Bounds on Short Hotkey Input
 
 ## Description
-The Cortex CLI documentation contains a critical version mismatch that causes significant user confusion and potential installation failures. The README.md references version `0.0.1c` in the version-specific installation examples, while the CHANGELOG.md documents version `0.0.5` as the current release. This inconsistency means:
+The `bounty status` command crashes with a Rust panic when provided a hotkey shorter than 8 characters. The code in `src/bin/bounty/commands/status.rs` performs string slicing (`&hotkey[..8]`) without first validating that the hotkey is at least 8 characters long. This causes an unrecoverable panic instead of a user-friendly error message.
 
-- Users following the README will attempt to install an outdated or non-existent version
-- New contributors cannot determine the actual current version
-- The version-specific installation command will fail or install wrong version
-- Trust in the project's documentation is undermined
+This is a critical usability bug because:
+- Users who mistype or paste partial hotkeys will crash the CLI
+- The panic message is cryptic and unhelpful to non-Rust users
+- No graceful error handling or recovery is possible
 
 ## Steps to Reproduce
-1. Navigate to the Cortex GitHub repository: https://github.com/CortexLM/cortex
-2. Open the README.md file and locate the "Version-Specific Installation" section
-3. Note the version shown: `CORTEX_VERSION=0.0.1c`
-4. Open the CHANGELOG.md file
-5. Note the documented version: `## [0.0.5]`
-6. Observe the version mismatch between the two files
+1. Build the bounty CLI:
+   ```bash
+   cd bounty-challenge
+   cargo build --release
+   export PATH="$PWD/target/release:$PATH"
+   ```
+
+2. Run the status command with a short hotkey (less than 8 characters):
+   ```bash
+   bounty status --hotkey "abc"
+   ```
+
+3. Observe the panic
 
 ## Expected Behavior
-The README.md version-specific installation example should reference the same version documented in CHANGELOG.md. Both files should consistently show:
+The CLI should validate the hotkey length before attempting to slice it and display a friendly error message:
 ```bash
-CORTEX_VERSION=0.0.5 curl -fsSL https://software.cortex.foundation/install.sh | sh
+$ bounty status --hotkey "abc"
+Error: Invalid hotkey format. Hotkey must be a valid SS58 address (48 characters).
 ```
 
 ## Actual Behavior
-README.md shows outdated version in example:
+The CLI crashes with a Rust panic:
 ```bash
-# What README.md currently shows:
-CORTEX_VERSION=0.0.1c curl -fsSL https://software.cortex.foundation/install.sh | sh
-
-# What CHANGELOG.md documents as current:
-## [0.0.5]
+$ bounty status --hotkey "abc"
+thread 'main' panicked at 'byte index 8 is out of bounds of `abc`', src/bin/bounty/commands/status.rs:9:42
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
-Users attempting version-specific installation with `0.0.1c` may:
-- Download an outdated build
-- Receive a 404 error if 0.0.1c assets don't exist
-- Miss all features and fixes documented in v0.0.5 CHANGELOG
+The problematic code at `src/bin/bounty/commands/status.rs:9`:
+```rust
+println!("Hotkey: {}...{}", &hotkey[..8], &hotkey[hotkey.len() - 4..]);
+```
+
+This line assumes `hotkey` is at least 8 characters, but no validation occurs before this point.
 
 ## System Information
-- **OS**: All platforms (Linux, macOS, Windows)
-- **Architecture**: All architectures (x86_64, ARM64, Apple Silicon)
-- **Shell**: All shells (bash, zsh, PowerShell)
-- **Cortex Version**: v0.0.5 (documented) vs v0.0.1c (README example)
-- **Installation Method**: Version-specific curl/wget installation
+- **OS**: Ubuntu 22.04 LTS
+- **Architecture**: x86_64
+- **Rust Version**: rustc 1.75.0
+- **Bounty CLI Version**: v0.0.5
+- **Shell**: bash 5.1
 
 ## Impact
-- **Severity**: High
-- **Affected Users**: All users attempting version-specific installation
+- **Severity**: Critical
+- **Affected Users**: All users who provide invalid or partial hotkey inputs
 - **Consequences**:
-  - New users may install outdated version missing 25+ features and 30+ bug fixes
-  - Version-specific installation may fail entirely if 0.0.1c assets are removed
-  - Contributors cannot reliably determine which version to test against
-  - Documentation credibility is compromised
-  - Bug reports may reference wrong versions, complicating triage
+  - CLI crashes without useful error message
+  - Poor user experience, especially for new users
+  - Users may think the CLI is broken rather than their input being wrong
+  - No opportunity to correct the mistake without understanding Rust panics
+  - Potential data loss if panic occurs mid-operation in future features
 
 ## Suggested Fix
-Update README.md version-specific installation section to reference v0.0.5:
 
-```diff
-### Version-Specific Installation
--CORTEX_VERSION=0.0.1c curl -fsSL https://software.cortex.foundation/install.sh | sh
-+CORTEX_VERSION=0.0.5 curl -fsSL https://software.cortex.foundation/install.sh | sh
+### Option 1: Validate Before Slicing (Recommended)
+Add bounds checking before any string slicing operations:
 
-# Windows PowerShell
--$env:CORTEX_VERSION="0.0.1c"; irm https://software.cortex.foundation/install.ps1 | iex
-+$env:CORTEX_VERSION="0.0.5"; irm https://software.cortex.foundation/install.ps1 | iex
+```rust
+pub async fn run(rpc: &str, hotkey: &str) -> Result<()> {
+    print_header("Miner Status");
+
+    // Validate hotkey length before slicing
+    if hotkey.len() < 8 {
+        print_error("Invalid hotkey: must be at least 8 characters");
+        return Ok(());
+    }
+
+    println!("Hotkey: {}...{}", &hotkey[..8], &hotkey[hotkey.len() - 4..]);
+    // ... rest of function
+}
 ```
 
-Additionally, consider:
-1. Adding a VERSION file at repository root for single source of truth
-2. Implementing CI checks to validate version consistency across docs
-3. Using variable substitution in docs to auto-update version references
+### Option 2: Use Safe Slicing with get()
+Use Rust's safe slicing method that returns Option:
+
+```rust
+let hotkey_display = match (hotkey.get(..8), hotkey.get(hotkey.len().saturating_sub(4)..)) {
+    (Some(start), Some(end)) => format!("{}...{}", start, end),
+    _ => hotkey.to_string(), // Fallback for short hotkeys
+};
+println!("Hotkey: {}", hotkey_display);
+```
+
+### Option 3: Full SS58 Validation
+Validate the hotkey format properly using the existing `is_valid_ss58_hotkey` function:
+
+```rust
+pub async fn run(rpc: &str, hotkey: &str) -> Result<()> {
+    print_header("Miner Status");
+
+    // Use existing validation function
+    if !bounty_challenge::auth::is_valid_ss58_hotkey(hotkey) {
+        print_error("Invalid hotkey format. Must be SS58 encoded.");
+        return Ok(());
+    }
+
+    // Safe to slice now since SS58 addresses are 48 chars
+    println!("Hotkey: {}...{}", &hotkey[..8], &hotkey[hotkey.len() - 4..]);
+    // ... rest of function
+}
+```
 
 ## Additional Context
-The version jump from 0.0.1c to 0.0.5 suggests several intermediate versions may have existed but aren't documented. The CHANGELOG only documents v0.0.5 with no history of previous releases. This lack of version history compounds the confusion.
 
-The README also shows copyright "2025 Cortex Foundation" while the CLAUDE.md shows "Last updated: 2026-01-29", suggesting documentation may be from different time periods without proper synchronization.
+### Same Bug Exists in Multiple Files
+This same vulnerability exists in other command files:
+
+| File | Line | Code |
+|------|------|------|
+| `src/bin/bounty/commands/status.rs` | 9 | `&hotkey[..8]` |
+| `src/bin/bounty/commands/validate.rs` | 11 | `&hk[..8]` |
+| `src/bin/bounty/wizard/register_wizard.rs` | 44-45 | `&hotkey[..8]` |
+| `src/bin/bounty/wizard/register_wizard.rs` | 92-93 | `&hotkey[..12]` |
+| `src/bin/bounty/wizard/register_wizard.rs` | 170 | `&hotkey[..16]` |
+
+All of these need to be fixed.
+
+### Test Cases to Add
+```rust
+#[test]
+fn test_status_with_short_hotkey() {
+    // Should return error, not panic
+    let result = run("http://test", "abc").await;
+    assert!(result.is_ok()); // Should handle gracefully
+}
+
+#[test]
+fn test_status_with_empty_hotkey() {
+    let result = run("http://test", "").await;
+    assert!(result.is_ok()); // Should handle gracefully
+}
+```
 
 ## References
-- README.md: https://github.com/CortexLM/cortex/blob/main/README.md
-- CHANGELOG.md: https://github.com/CortexLM/cortex/blob/main/CHANGELOG.md
-- Semantic Versioning specification: https://semver.org/
+- Affected file: `src/bin/bounty/commands/status.rs:9`
+- Rust string slicing documentation: https://doc.rust-lang.org/std/primitive.str.html#method.get
+- SS58 format specification: https://docs.substrate.io/reference/address-formats/

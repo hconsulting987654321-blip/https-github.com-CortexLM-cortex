@@ -1,121 +1,182 @@
-# [BUG] [v0.0.5] Uninstall Instructions Use Wrong Binary Name Case (Cortex vs cortex)
+# [BUG] [v0.0.5] Hardcoded Wrong Repository URL Directs Users to Create Issues in Wrong Location
 
 ## Description
-The README.md uninstall instructions reference the binary as `Cortex` (capital C), but CLI tools on Unix-like systems conventionally use lowercase names (`cortex`). On case-sensitive filesystems (Linux, most macOS configurations), this causes the uninstall command to fail with "file not found" because the actual binary is likely named `cortex` (lowercase), not `Cortex`.
+The CLI registration command and configuration display hardcode the wrong repository URL (`CortexLM/fabric`), directing users to create issues in a repository that doesn't count toward bounty rewards. According to the README, issues MUST be submitted to `PlatformNetwork/bounty-challenge` to receive rewards, but the CLI instructs users to submit to `CortexLM/fabric`.
 
-This bug affects all Linux users and most macOS users attempting to uninstall Cortex CLI. The inconsistency between the install behavior (which likely installs `cortex`) and the documented uninstall command (which references `Cortex`) leaves users with an orphaned binary they cannot remove using official instructions.
+This is a critical bug because:
+- Users following CLI instructions will create issues in the wrong repository
+- These issues will NOT count toward their bounty rewards
+- Users will waste time and effort with no compensation
+- The misdirection undermines the entire bounty system
 
 ## Steps to Reproduce
-1. Install Cortex CLI using the official installation script:
+1. Build and install the bounty CLI:
    ```bash
-   curl -fsSL https://software.cortex.foundation/install.sh | sh
+   cd bounty-challenge
+   cargo build --release
+   export PATH="$PWD/target/release:$PATH"
    ```
-2. Verify installation by checking the binary name:
+
+2. Run the registration command (or complete registration):
    ```bash
-   ls -la /usr/local/bin/ | grep -i cortex
-   # Note: binary is likely lowercase 'cortex'
+   bounty register --hotkey YOUR_HOTKEY
    ```
-3. Attempt to uninstall using the documented command from README:
+
+3. After successful registration, observe the "Next steps" output
+
+4. Alternatively, run the config command:
    ```bash
-   sudo rm /usr/local/bin/Cortex
+   bounty config
    ```
-4. Observe the error: `rm: cannot remove '/usr/local/bin/Cortex': No such file or directory`
+
+5. Observe the wrong repository URL in the output
 
 ## Expected Behavior
-The uninstall command should successfully remove the Cortex binary:
-```bash
-sudo rm /usr/local/bin/cortex    # lowercase 'c'
-# No output (successful deletion)
+After registration, the CLI should direct users to the correct repository:
+```
+Next steps:
+  1. Create issues on https://github.com/PlatformNetwork/bounty-challenge/issues
+  2. Wait for maintainers to validate with 'valid' label
+  3. Bounties are credited automatically!
 ```
 
-Or if the binary truly is named `Cortex`, the installation documentation should clarify this non-standard naming convention.
+The config command should show:
+```
+Target Repository:
+  https://github.com/PlatformNetwork/bounty-challenge
+```
 
 ## Actual Behavior
-Following the documented uninstall instructions results in:
-```bash
-$ sudo rm /usr/local/bin/Cortex
-rm: cannot remove '/usr/local/bin/Cortex': No such file or directory
 
-# The actual binary exists with lowercase name:
-$ ls /usr/local/bin/cortex
-/usr/local/bin/cortex
+### In register.rs (lines 99-101):
+```
+Next steps:
+  1. Create issues on https://github.com/CortexLM/fabric/issues  <-- WRONG
+  2. Wait for maintainers to validate with 'valid' label
+  3. Bounties are credited automatically!
 ```
 
-Additionally, the usage commands in README use lowercase `cortex`:
-```bash
-cortex                        # lowercase in usage
-cortex "explain this codebase"  # lowercase in usage
-cortex upgrade                  # lowercase in usage
+### In config.rs (line 57):
+```
+Target Repository:
+  https://github.com/CortexLM/fabric  <-- WRONG
 ```
 
-This inconsistency proves the binary name is `cortex` (lowercase), making the uninstall command incorrect.
+### In lib.rs (lines 4, 10):
+```rust
+//! in the CortexLM/fabric repository.  <-- WRONG in documentation
+// ...
+//! 2. Miners create issues on CortexLM/fabric  <-- WRONG
+```
 
 ## System Information
-- **OS**: Linux (Ubuntu 22.04 LTS, Fedora 39, Debian 12), macOS 14.x Sonoma
-- **Architecture**: x86_64, ARM64
-- **Shell**: bash 5.x, zsh 5.9
-- **Cortex Version**: v0.0.5
-- **Installation Method**: curl installation script
-- **Filesystem**: ext4, APFS, XFS (all case-sensitive by default)
+- **OS**: Ubuntu 22.04 LTS
+- **Architecture**: x86_64
+- **Rust Version**: rustc 1.75.0
+- **Bounty CLI Version**: v0.0.5
+- **Shell**: bash 5.1
 
 ## Impact
-- **Severity**: Medium
-- **Affected Users**: All Linux users, most macOS users attempting clean uninstall
+- **Severity**: Critical
+- **Affected Users**: ALL miners who complete registration and follow CLI instructions
 - **Consequences**:
-  - Users cannot cleanly uninstall Cortex using official documentation
-  - Orphaned binaries remain on system consuming disk space
-  - Users must manually discover correct binary name
-  - Confusion and reduced trust in project documentation
-  - Potential security concern: users may think they've uninstalled when they haven't
+  - **Lost rewards**: Issues created in CortexLM/fabric don't count for bounties
+  - **Wasted effort**: Users spend time writing quality bug reports with no compensation
+  - **Confusion**: Contradicts README which clearly states correct repository
+  - **Trust damage**: Users who discover the error may lose confidence in the project
+  - **Support burden**: Influx of "why aren't my issues counting?" questions
+
+### README vs CLI Contradiction
+
+| Source | Repository Shown | Correct? |
+|--------|-----------------|----------|
+| README.md (line 19) | `PlatformNetwork/bounty-challenge` | Yes |
+| README.md (line 154) | `PlatformNetwork/bounty-challenge` | Yes |
+| README.md (line 219) | `PlatformNetwork/bounty-challenge` | Yes |
+| register.rs (line 101) | `CortexLM/fabric` | **NO** |
+| config.rs (line 57) | `CortexLM/fabric` | **NO** |
+| lib.rs (line 4) | `CortexLM/fabric` | **NO** |
+| register_wizard.rs (line 159) | `PlatformNetwork/bounty-challenge` | Yes |
 
 ## Suggested Fix
-Update README.md uninstall instructions to use correct lowercase binary name:
 
+### Fix 1: Update register.rs (lines 99-101)
 ```diff
-## Uninstall
-
-**Linux & macOS:**
--sudo rm /usr/local/bin/Cortex
-+sudo rm /usr/local/bin/cortex
-# Or if installed to ~/.local/bin
--rm ~/.local/bin/Cortex
-+rm ~/.local/bin/cortex
+println!("Next steps:");
+println!(
+    "  1. Create issues on {}",
+-   style_cyan("https://github.com/CortexLM/fabric/issues")
++   style_cyan("https://github.com/PlatformNetwork/bounty-challenge/issues")
+);
 ```
 
-For Windows, verify the actual installed filename and update accordingly:
+### Fix 2: Update config.rs (line 57)
 ```diff
-**Windows:**
--Remove-Item "$env:LOCALAPPDATA\Cortex\Cortex.exe"
-+Remove-Item "$env:LOCALAPPDATA\Cortex\cortex.exe"
+println!("{}", style_bold("Target Repository:"));
+-println!("  https://github.com/CortexLM/fabric");
++println!("  https://github.com/PlatformNetwork/bounty-challenge");
 ```
 
-Consider adding verification steps:
-```bash
-## Uninstall
+### Fix 3: Update lib.rs documentation
+```diff
+//! This challenge incentivizes the discovery and reporting of valid bugs
+-//! in the CortexLM/fabric repository. Miners earn rewards for submitting
++//! in the CortexLM/cortex repository. Issues must be submitted to
++//! PlatformNetwork/bounty-challenge to earn rewards.
 
-**Linux & macOS:**
-# First, verify the installation location:
-which cortex
+// ...
 
-# Then remove:
-sudo rm /usr/local/bin/cortex
-# Or if installed to user directory:
-rm ~/.local/bin/cortex
+-//! 2. Miners create issues on CortexLM/fabric
++//! 2. Miners analyze CortexLM/cortex and submit issues to PlatformNetwork/bounty-challenge
 ```
+
+### Fix 4: Centralize Repository Configuration
+Create a constants file to avoid future inconsistencies:
+
+```rust
+// src/constants.rs
+pub const TARGET_REPO: &str = "CortexLM/cortex";
+pub const BOUNTY_REPO: &str = "PlatformNetwork/bounty-challenge";
+pub const BOUNTY_ISSUES_URL: &str = "https://github.com/PlatformNetwork/bounty-challenge/issues";
+```
+
+Then use these constants throughout the codebase instead of hardcoded strings.
 
 ## Additional Context
-The case mismatch appears in multiple places in the README:
 
-| Context | Binary Name Used | Correct? |
-|---------|-----------------|----------|
-| Usage examples | `cortex` | Yes |
-| Upgrade command | `cortex upgrade` | Yes |
-| Uninstall (Linux/macOS) | `Cortex` | **No** |
-| Uninstall (Windows) | `Cortex.exe` | **Likely No** |
+### The Actual Bounty Flow (per README)
+1. Analyze bugs in **CortexLM/cortex** (the target repository)
+2. Submit bug reports to **PlatformNetwork/bounty-challenge** (this repository)
+3. Wait for `valid` label from maintainers
+4. Receive TAO rewards
 
-Unix conventions strongly favor lowercase binary names for CLI tools. The discrepancy suggests the documentation was written without testing the actual uninstall process.
+### Why CortexLM/fabric is Wrong
+- `CortexLM/fabric` is a different repository entirely
+- It may not even have the bounty system configured
+- Issues there won't be scanned by the bounty challenge validator
+- The maintainers there may not use the `valid` label system
+
+### Affected User Journey
+```
+User registers successfully
+    ↓
+CLI shows "Create issues on CortexLM/fabric"
+    ↓
+User creates quality bug report on CortexLM/fabric
+    ↓
+Issue may or may not be reviewed (different project)
+    ↓
+No bounty reward (wrong repo)
+    ↓
+User checks status: "No valid bounties"
+    ↓
+User is confused and frustrated
+```
 
 ## References
-- README.md Uninstall Section: https://github.com/CortexLM/cortex#uninstall
-- Linux Filesystem Hierarchy Standard: https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html
-- POSIX naming conventions for executables
+- Affected files:
+  - `src/bin/bounty/commands/register.rs:101`
+  - `src/bin/bounty/commands/config.rs:57`
+  - `src/lib.rs:4,10`
+- README documentation: https://github.com/PlatformNetwork/bounty-challenge#where-to-submit-issues
+- Note: `register_wizard.rs:159` correctly shows `PlatformNetwork/bounty-challenge`
