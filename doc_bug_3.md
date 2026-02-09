@@ -1,114 +1,124 @@
-# [BUG] [v0.0.6] Version Examples Use Outdated Version Number (0.0.1c vs Current 0.0.6)
+# [BUG] [v0.0.7] TextInput cursor position cast to u16 causes overflow/panic for inputs longer than 65535 characters
 
 ## Description
-The README.md documentation shows `0.0.1c` as the example version for specific version installation, but the current released version is `0.0.6`. This creates confusion for users who may think `0.0.1c` is the latest or recommended version, or wonder why the example uses such an old version number with an unusual suffix format (`c`).
+The `TextInput` widget in `cortex-tui-components/src/input.rs` casts the cursor position from `usize` to `u16` without bounds checking when calculating the render position. For text inputs longer than 65,535 characters (the maximum value for u16), this will cause an integer overflow, rendering the cursor at the wrong position or potentially causing a panic in debug builds.
 
 ## Location
-- **File**: README.md
-- **Section**: Installation > Install a specific version
-- **Line**: Approximately line 30-38
+- **File**: src/cortex-tui-components/src/input.rs
+- **Function**: `impl Widget for TextInput::render()`
+- **Line**: Approximately line 175
 
 ## Steps to Reproduce
-1. Read the README.md "Install a specific version" section
-2. Note the example uses `CORTEX_VERSION=0.0.1c`
-3. Run the installation script normally
-4. Observe that version `0.0.6` is installed (not `0.0.1c`)
-5. Check CHANGELOG.md which shows versions `0.0.5` with no mention of `0.0.1c`
+1. Create a text input component
+2. Paste or type more than 65,535 characters
+3. Move cursor to position beyond 65535
+4. Observe cursor renders at wrong position (wraps around due to overflow)
+
+```rust
+let mut state = InputState::new().with_value("A".repeat(70000));
+state.move_end(); // cursor = 70000
+// When rendering, cursor_x = x + 70000 as u16 = x + 4464 (overflow!)
+```
 
 ## Expected Behavior
-The documentation should use a recent, valid version number in examples that:
-- Matches an actual released version
-- Is close to the current version
-- Uses consistent versioning format (semantic versioning without letter suffixes)
-
-Example with current version:
-```bash
-CORTEX_VERSION=0.0.5 curl -fsSL https://software.cortex.foundation/install.sh | sh
-```
+The cursor should either:
+1. Be clamped to the visible area, or
+2. Use `saturating_cast` or bounds checking to prevent overflow, or
+3. Use a larger integer type that can accommodate very long inputs
 
 ## Actual Behavior
-The documentation shows:
-```bash
-# Linux & macOS
-CORTEX_VERSION=0.0.1c curl -fsSL https://software.cortex.foundation/install.sh | sh
-
-# Windows PowerShell
-$env:CORTEX_VERSION="0.0.1c"; irm https://software.cortex.foundation/install.ps1 | iex
+The code performs an unchecked cast:
+```rust
+// Cursor
+if self.focused {
+    let cursor_x = x + self.state.cursor as u16;  // <-- Overflow if cursor > 65535
+    if cursor_x < area.right()
+        && let Some(cell) = buf.cell_mut((cursor_x, area.y))
+    {
+        cell.set_bg(CYAN_PRIMARY).set_fg(SURFACE_1);
+    }
+}
 ```
 
-Issues with this:
-1. Version `0.0.1c` is significantly older than current `0.0.6`
-2. The `c` suffix is unusual and doesn't appear in CHANGELOG.md
-3. Users may accidentally install an outdated version by copying the example
-4. Creates inconsistency between documentation and actual releases
+When `self.state.cursor` is 70,000:
+- `70000 as u16` = 4464 (truncated, wraps around)
+- Cursor renders at completely wrong position
 
 ## System Information
-- **Documentation Version**: Current main branch (commit as of 2026-01-29)
-- **Date Checked**: 2026-01-29
-- **Current CLI Version**: v0.0.6 (from installer)
-- **CHANGELOG Latest Version**: 0.0.5
+- **Cortex Version**: v0.0.7
+- **File**: src/cortex-tui-components/src/input.rs
+- **Affected Functionality**: Text input cursor rendering in TUI
 
 ## Impact
-- **Severity**: Medium
-- **Affected Users**: Users who want to install a specific version
+- **Severity**: Low
+- **Affected Users**: Users who paste very large content into text inputs
 - **Consequence**:
-  - Users may install severely outdated version by copying the example
-  - Confusion about versioning scheme (what does `c` suffix mean?)
-  - Version mismatch between README example and CHANGELOG
-  - Poor user experience when example doesn't reflect current state
+  - Cursor displays at wrong position
+  - Visual confusion about where text will be inserted
+  - In debug builds, may panic on overflow
+  - Edge case but demonstrates missing bounds checking
 
 ## Suggested Fix
-Update the version examples to use a recent valid version:
+Use saturating arithmetic or explicit bounds checking:
 
-```diff
-### Install a specific version
+```rust
+// Cursor
+if self.focused {
+    // Safely calculate cursor position, clamping to u16::MAX
+    let cursor_offset = self.state.cursor.min(u16::MAX as usize) as u16;
+    let cursor_x = x.saturating_add(cursor_offset);
 
-```bash
-# Linux & macOS
-- CORTEX_VERSION=0.0.1c curl -fsSL https://software.cortex.foundation/install.sh | sh
-+ CORTEX_VERSION=0.0.5 curl -fsSL https://software.cortex.foundation/install.sh | sh
-
-# Windows PowerShell
-- $env:CORTEX_VERSION="0.0.1c"; irm https://software.cortex.foundation/install.ps1 | iex
-+ $env:CORTEX_VERSION="0.0.5"; irm https://software.cortex.foundation/install.ps1 | iex
+    if cursor_x < area.right() {
+        if let Some(cell) = buf.cell_mut((cursor_x, area.y)) {
+            cell.set_bg(CYAN_PRIMARY).set_fg(SURFACE_1);
+        }
+    }
+}
 ```
 
-Alternatively, use a placeholder that indicates it's an example:
-```bash
-CORTEX_VERSION=<version> curl -fsSL https://software.cortex.foundation/install.sh | sh
-# Example: CORTEX_VERSION=0.0.5 curl -fsSL ...
+Or better, handle horizontal scrolling for very long inputs:
+```rust
+// Calculate visible offset for long text
+let visible_width = area.width.saturating_sub(label_width + 2) as usize;
+let scroll_offset = if self.state.cursor > visible_width {
+    self.state.cursor - visible_width + 1
+} else {
+    0
+};
+let visible_cursor = self.state.cursor - scroll_offset;
+let cursor_x = x + visible_cursor as u16;
 ```
 
 ## Evidence
-From README.md "Install a specific version" section:
-> ```bash
-> # Linux & macOS
-> CORTEX_VERSION=0.0.1c curl -fsSL https://software.cortex.foundation/install.sh | sh
-> ```
+From input.rs:
+```rust
+impl Widget for TextInput<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // ... label rendering ...
 
-From CHANGELOG.md (latest entry):
-> ## 0.0.5
->
-> ### Added
-> - Added interactive /agents command...
-
-From actual installation:
-```
-$ curl -sSL https://software.cortex.foundation/install.sh | bash
-...
-==> Installing Cortex CLI v0.0.6
-...
-==> Cortex CLI v0.0.6 installed successfully!
+        // Cursor
+        if self.focused {
+            let cursor_x = x + self.state.cursor as u16;  // OVERFLOW HERE
+            if cursor_x < area.right()
+                && let Some(cell) = buf.cell_mut((cursor_x, area.y))
+            {
+                cell.set_bg(CYAN_PRIMARY).set_fg(SURFACE_1);
+            }
+        }
+    }
+}
 ```
 
-Version comparison:
-| Source | Version | Notes |
-|--------|---------|-------|
-| README example | 0.0.1c | Outdated, unusual suffix |
-| CHANGELOG latest | 0.0.5 | Documented release |
-| Actual installer | 0.0.6 | Current release |
+The `InputState` uses `usize` for cursor:
+```rust
+pub struct InputState {
+    pub value: String,
+    pub cursor: usize,  // <-- Can be > 65535
+    // ...
+}
+```
 
 ## References
-- https://github.com/CortexLM/cortex/blob/main/README.md#install-a-specific-version
-- https://github.com/CortexLM/cortex/blob/main/CHANGELOG.md
-- Semantic Versioning specification: https://semver.org/
+- https://github.com/CortexLM/cortex/blob/main/src/cortex-tui-components/src/input.rs
+- Rust integer overflow behavior: https://doc.rust-lang.org/book/ch03-02-data-types.html#integer-overflow
+- u16::MAX = 65535: https://doc.rust-lang.org/std/primitive.u16.html#associatedconstant.MAX
