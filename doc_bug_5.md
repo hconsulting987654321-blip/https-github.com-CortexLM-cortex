@@ -1,140 +1,157 @@
-# [BUG] [v0.0.6] Installation Documentation Missing PATH Persistence Instructions
+# [BUG] [v0.0.7] ResumePicker filter destroys original sessions list - cannot restore after clearing filter
 
 ## Description
-The installation script outputs instructions to add the binary to PATH using `export PATH="$HOME/.local/bin:$PATH"`, but the README.md does not document that this export is temporary and only applies to the current shell session. Users who follow the installation and add the PATH export will lose access to the `cortex` command after closing their terminal, leading to confusion about why the command suddenly doesn't work.
+The `apply_filter()` method in `cortex-resume/src/resume_picker.rs` uses `retain()` on `self.sessions` which destructively modifies the original list. When a user clears the filter, the filtered-out sessions are permanently lost from the picker until `load()` is called again. This breaks the expected filter/unfilter UX pattern.
+
+Note: This is different from #6928 which covers `selected_index` not being reset. This bug is about the sessions data itself being destroyed.
 
 ## Location
-- **File**: README.md
-- **Section**: Installation (entire section)
-- **Line**: N/A - Information is missing entirely
+- **File**: src/cortex-resume/src/resume_picker.rs
+- **Function**: `apply_filter()`
+- **Line**: Approximately lines 36-45
 
 ## Steps to Reproduce
-1. Follow the Linux installation instructions:
-   ```bash
-   curl -fsSL https://software.cortex.foundation/install.sh | sh
-   ```
-2. If prompted, run the suggested export command:
-   ```bash
-   export PATH="$HOME/.local/bin:$PATH"
-   ```
-3. Verify `cortex --version` works
-4. Close the terminal and open a new one
-5. Try `cortex --version` again
-6. Observe: `command not found: cortex`
+1. Open resume picker with 10 sessions
+2. Type a filter that matches 3 sessions
+3. Observe: 3 sessions displayed (correct)
+4. Clear the filter (backspace to empty)
+5. Observe: Still only 3 sessions displayed (BUG - should show all 10)
+6. Must reload sessions to see all 10 again
 
 ## Expected Behavior
-The documentation should include one of the following:
-1. A note explaining that the PATH export is temporary
-2. Instructions for making the PATH change permanent
-3. Information about which shell profile file to modify (`.bashrc`, `.zshrc`, etc.)
+Clearing the filter should restore all original sessions. The filter should work on a filtered view, not the source data:
 
-Example of what should be documented:
-```bash
-# Add to your shell profile for permanent access
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-
-# Or for Zsh users:
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+```rust
+pub struct ResumePicker {
+    store: SessionStore,
+    all_sessions: Vec<SessionSummary>,     // Original unfiltered list
+    filtered_sessions: Vec<usize>,          // Indices into all_sessions
+    selected_index: usize,
+    filter: Option<String>,
+}
 ```
 
 ## Actual Behavior
-The README.md Installation section shows:
-```bash
-curl -fsSL https://software.cortex.foundation/install.sh | sh
+The code destructively modifies `self.sessions`:
+
+```rust
+fn apply_filter(&mut self) {
+    if let Some(ref filter) = self.filter {
+        let filter_lower = filter.to_lowercase();
+        self.sessions.retain(|s| {   // <-- DESTROYS original list
+            s.title.to_lowercase().contains(&filter_lower)
+                || s.id.to_lowercase().contains(&filter_lower)
+                || s.preview
+                    .as_ref()
+                    .map(|p| p.to_lowercase().contains(&filter_lower))
+                    .unwrap_or(false)
+        });
+    }
+}
 ```
 
-There is no mention of:
-- PATH configuration requirements
-- The temporary nature of shell exports
-- How to persist the PATH change
-- Which shell configuration file to modify
-- Troubleshooting if `cortex` command is not found
+Once `retain()` removes sessions, they're gone until the next `load()` call.
 
 ## System Information
-- **Documentation Version**: Current main branch (commit as of 2026-01-29)
-- **Date Checked**: 2026-01-29
-- **Platforms Affected**: Linux, macOS (any Unix-like system)
-- **Shells Affected**: Bash, Zsh, Fish, and others
+- **Cortex Version**: v0.0.7
+- **File**: src/cortex-resume/src/resume_picker.rs
+- **Affected Functionality**: Session resume picker filtering
 
 ## Impact
 - **Severity**: Medium
-- **Affected Users**: New users on Linux/macOS, especially those unfamiliar with shell PATH configuration
+- **Affected Users**: All users who use the session filter and then clear it
 - **Consequence**:
-  - Users successfully install but cannot use the tool after restarting terminal
-  - Creates confusion: "It worked yesterday, why doesn't it work now?"
-  - Users may think installation is broken and reinstall unnecessarily
-  - Poor first-time user experience
-  - Increased support burden for common "command not found" issues
+  - Sessions "disappear" when user clears filter
+  - Users must exit and re-enter resume picker to see all sessions
+  - Confusing UX - users may think sessions were deleted
+  - Progressive filtering narrows results with no way to widen
 
 ## Suggested Fix
-Add a "Post-Installation" or "PATH Configuration" section to the README:
+Store original sessions separately and filter into a separate indices list:
 
-```diff
-### Linux & macOS
+```rust
+pub struct ResumePicker {
+    store: SessionStore,
+    all_sessions: Vec<SessionSummary>,
+    visible_indices: Vec<usize>,
+    selected_index: usize,
+    filter: Option<String>,
+}
 
-```bash
-curl -fsSL https://software.cortex.foundation/install.sh | sh
-```
+impl ResumePicker {
+    pub async fn load(&mut self, include_archived: bool) -> Result<()> {
+        self.all_sessions = self.store.list_sessions(include_archived).await?;
+        self.selected_index = 0;
+        self.apply_filter();
+        Ok(())
+    }
 
-+ #### Making Cortex Available in New Terminals
-+
-+ The installer places the binary in `~/.local/bin`. To use `cortex` in all terminal sessions, add this directory to your PATH permanently:
-+
-+ **For Bash users** (most Linux distributions):
-+ ```bash
-+ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-+ source ~/.bashrc
-+ ```
-+
-+ **For Zsh users** (macOS default, some Linux):
-+ ```bash
-+ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-+ source ~/.zshrc
-+ ```
-+
-+ **For Fish users**:
-+ ```fish
-+ fish_add_path ~/.local/bin
-+ ```
-+
-+ > **Note**: If you used `sudo` during installation, the binary may be in `/usr/local/bin` which is typically already in your PATH.
+    pub fn set_filter(&mut self, filter: Option<String>) {
+        self.filter = filter;
+        self.apply_filter();
+    }
+
+    fn apply_filter(&mut self) {
+        self.visible_indices = if let Some(ref filter) = self.filter {
+            let filter_lower = filter.to_lowercase();
+            self.all_sessions
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| {
+                    s.title.to_lowercase().contains(&filter_lower)
+                        || s.id.to_lowercase().contains(&filter_lower)
+                        || s.preview
+                            .as_ref()
+                            .map(|p| p.to_lowercase().contains(&filter_lower))
+                            .unwrap_or(false)
+                })
+                .map(|(i, _)| i)
+                .collect()
+        } else {
+            (0..self.all_sessions.len()).collect()
+        };
+
+        // Reset selection if out of bounds
+        if self.selected_index >= self.visible_indices.len() {
+            self.selected_index = 0;
+        }
+    }
+
+    pub fn sessions(&self) -> impl Iterator<Item = &SessionSummary> {
+        self.visible_indices.iter().map(|&i| &self.all_sessions[i])
+    }
+}
 ```
 
 ## Evidence
-The installer output shows:
+From resume_picker.rs:
+```rust
+pub struct ResumePicker {
+    store: SessionStore,
+    sessions: Vec<SessionSummary>,  // <-- Only one list, gets modified
+    selected_index: usize,
+    filter: Option<String>,
+}
+
+fn apply_filter(&mut self) {
+    if let Some(ref filter) = self.filter {
+        let filter_lower = filter.to_lowercase();
+        self.sessions.retain(|s| {   // <-- Destructive modification
+            s.title.to_lowercase().contains(&filter_lower)
+            // ...
+        });
+    }
+}
+
+pub fn set_filter(&mut self, filter: Option<String>) {
+    self.filter = filter;
+    self.apply_filter();  // <-- Destroys sessions each time
+}
 ```
-==> Installing to /home/user/.local/bin...
-==> Cortex CLI v0.0.6 installed successfully!
 
-Run 'cortex --help' to get started
-```
-
-But does not mention PATH configuration. The README also lacks this information.
-
-Common user experience:
-```bash
-# Right after installation - works
-$ cortex --version
-cortex 0.0.6
-
-# After opening new terminal - fails
-$ cortex --version
-bash: cortex: command not found
-
-# User confusion: "But I just installed it!"
-```
-
-## Additional Context
-This is a common documentation gap in CLI tools. Well-documented projects typically include:
-1. Default installation path
-2. PATH requirements
-3. Shell-specific instructions for common shells
-4. Troubleshooting for "command not found"
+The `set_filter` method is the public API for changing filters, and each call permanently removes non-matching sessions.
 
 ## References
-- https://github.com/CortexLM/cortex/blob/main/README.md#installation
-- Bash manual on startup files: https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html
-- Zsh startup files: https://zsh.sourceforge.io/Doc/Release/Files.html
-- XDG Base Directory Specification (for ~/.local/bin): https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
+- https://github.com/CortexLM/cortex/blob/main/src/cortex-resume/src/resume_picker.rs
+- Related issue: #6928 (selected_index not reset) - different aspect of same function
+- Vec::retain documentation: https://doc.rust-lang.org/std/vec/struct.Vec.html#method.retain
